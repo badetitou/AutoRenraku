@@ -22,13 +22,7 @@ BaselineOfAutoReneraku >> defineDependencies: spec [
 
 	spec
 		baseline: 'Mocketry'
-		with: [
-		spec repository: 'github://dionisiydk/Mocketry:master' ].
-
-	spec
-		baseline: 'AutoRenerakuSample'
-		with: [
-		spec repository: 'github://badetitou/AutoReneraku-Sample:to-improve' ]
+		with: [ spec repository: 'github://dionisiydk/Mocketry:master' ]
 ]
 
 { #category : 'baselines' }
@@ -41,5 +35,5 @@ BaselineOfAutoReneraku >> definePackages: spec [
 	spec package: 'AutoReneraku'.
 	spec
 		package: 'AutoReneraku-Tests'
-		with: [ spec requires: #( 'AutoReneraku' 'Mocketry' 'AutoRenerakuSample' ) ]
+		with: [ spec requires: #( 'AutoReneraku' 'Mocketry' ) ]
 ]

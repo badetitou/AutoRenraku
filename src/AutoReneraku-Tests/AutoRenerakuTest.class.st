@@ -11,34 +11,123 @@ Class {
 	#package : 'AutoReneraku-Tests'
 }
 
+{ #category : 'fixtures' }
+AutoRenerakuTest >> completeRemovalFixtureSource [
+
+	^ String cr join:
+		  #( 'testOutside' '' '	| outside |' '	self flag: ''We should improve this method''.'
+		     '	outside := 1 > 2' '		           ifTrue: [ 3 ]'
+		     '		           ifFalse: [ 4 ]' )
+]
+
+{ #category : 'fixtures' }
+AutoRenerakuTest >> completeRemovalMethod [
+
+	^ AutoRenerakuTestSampleWithFlag >> #testOutside
+]
+
+{ #category : 'fixtures' }
+AutoRenerakuTest >> correctableFixtureSource [
+
+	^ String cr join:
+		  #( 'testOutside' '' '	| outside |' '	1 > 2' '		ifTrue: [ outside := 3 ]'
+		     '		ifFalse: [ outside := 4 ]' )
+]
+
+{ #category : 'fixtures' }
+AutoRenerakuTest >> correctableMethod [
+
+	^ AutoRenerakuTestSample >> #testOutside
+]
+
+{ #category : 'fixtures' }
+AutoRenerakuTest >> installFixtureMethods [
+
+	AutoRenerakuTestSample
+		compile: self correctableFixtureSource
+		classified: 'tests'.
+	AutoRenerakuTestSampleSubClass
+		compile: self protocolOnlyChangeFixtureSource
+		classified: 'execution'.
+	AutoRenerakuTestSampleWithFlag
+		compile: self completeRemovalFixtureSource
+		classified: 'tests'.
+	AutoRenerakuTestSampleWithFlag
+		compile: self multiStatementRemovalFixtureSource
+		classified: 'tests'.
+	AutoRenerakuTestSampleWithFlag
+		compile: self notFormattedFixtureSource
+		classified: 'tests'
+]
+
+{ #category : 'fixtures' }
+AutoRenerakuTest >> multiStatementRemovalFixtureSource [
+
+	^ String cr join:
+		  #( 'testOutsideMultiStatementFlag' '	"with comment"'
+		     '' '	| outside |' '	outside := 1 > 2' '		           ifTrue: [ 3 ]'
+		     '		           ifFalse: [ 4 ].' '	self flag: ''We should improve this method''.'
+		     '	outside := 1 > 2' '		           ifTrue: [ 3 ]'
+		     '		           ifFalse: [ 4 ]' )
+]
+
+{ #category : 'fixtures' }
+AutoRenerakuTest >> multiStatementRemovalMethod [
+
+	^ AutoRenerakuTestSampleWithFlag >> #testOutsideMultiStatementFlag
+]
+
+{ #category : 'fixtures' }
+AutoRenerakuTest >> notFormattedFixtureSource [
+
+	^ String cr join: #( 'testOutsideMultiStatementFlagNotFormatted'
+		     '	"with comment"' '' '	| outside |' '	outside := 1 > 2 ifTrue: [ 3 ] ifFalse: [ 4 ].'
+		     '	self flag: ''We should improve this method''.'
+		     '	outside := 1 > 2 ifTrue: [ 3 ] ifFalse: [ 4 ]' )
+]
+
+{ #category : 'fixtures' }
+AutoRenerakuTest >> notFormattedMethod [
+
+	^ AutoRenerakuTestSampleWithFlag
+	  >> #testOutsideMultiStatementFlagNotFormatted
+]
+
+{ #category : 'fixtures' }
+AutoRenerakuTest >> protocolOnlyChangeFixtureSource [
+
+	^ String cr join:
+		  #( 'testOutside' '' '	| outside |' '	outside := 1 > 2'
+		     '		           ifTrue: [ 3 ]' '		           ifFalse: [ 4 ]' )
+]
+
+{ #category : 'fixtures' }
+AutoRenerakuTest >> protocolOnlyChangeMethod [
+
+	^ AutoRenerakuTestSampleSubClass >> #testOutside
+]
+
 { #category : 'running' }
 AutoRenerakuTest >> setUp [
 
 	super setUp.
+	self installFixtureMethods.
 
 	autoreneraku := AutoReneraku new.
-	autoreneraku projectName: 'AutoReneraku-Sample'
+	autoreneraku projectName: 'AutoReneraku'
 ]
 
 { #category : 'running' }
 AutoRenerakuTest >> tearDown [
 
-	| registry |
-	registry := IceRepository registry detect: [ :r |
-		            r name = 'AutoReneraku-Sample' ].
-	registry loadedPackages do: [ :package |
-		package
-			unload;
-			load ].
-	super tearDown
+	[ self installFixtureMethods ] ensure: [ super tearDown ]
 ]
 
 { #category : 'tests' }
 AutoRenerakuTest >> testAutoRenerakuMethodSkipsNotFormattedSuggestion [
 
 	| method |
-	method := ARSampleWithFlag
-	          >> #testOutsideMultiStatementFlagNotFormatted.
+	method := self notFormattedMethod.
 	(autoreneraku stub suggestNewMethod: Any) willReturn: true.
 	autoreneraku autoRenerakuMethod: method.
 	autoreneraku should not receive suggestNewMethod: Any
@@ -48,10 +137,10 @@ AutoRenerakuTest >> testAutoRenerakuMethodSkipsNotFormattedSuggestion [
 AutoRenerakuTest >> testBuildBodyOfBasedOn [
 
 	| method data |
-	method := ARSample >> #testOutside.
+	method := self correctableMethod.
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
-	(autoreneraku buildBodyOf: data basedOn: method).
+	autoreneraku buildBodyOf: data basedOn: method.
 	self assert: (data at: #body) equals: '```suggestion
 	outside := 1 > 2
 		           ifTrue: [ 3 ]
@@ -63,10 +152,10 @@ AutoRenerakuTest >> testBuildBodyOfBasedOn [
 AutoRenerakuTest >> testBuildBodyOfBasedOnForProtocol [
 
 	| method data |
-	method := ARSampleSubClass >> #testOutside.
+	method := self protocolOnlyChangeMethod.
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
-	(autoreneraku buildBodyOf: data basedOn: method).
+	autoreneraku buildBodyOf: data basedOn: method.
 	self assert: (data at: #body) equals: '```suggestion
 { #category : ''tests'' }
 ```'
@@ -76,10 +165,10 @@ AutoRenerakuTest >> testBuildBodyOfBasedOnForProtocol [
 AutoRenerakuTest >> testBuildBodyOfBasedOnForRemoval [
 
 	| method data |
-	method := ARSampleWithFlag >> #testOutside.
+	method := self completeRemovalMethod.
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
-	(autoreneraku buildBodyOf: data basedOn: method).
+	autoreneraku buildBodyOf: data basedOn: method.
 	"At least it should be removed (and replace with nothing, why not?)"
 	self assert: (data at: #body) equals: '```suggestion
 
@@ -90,10 +179,10 @@ AutoRenerakuTest >> testBuildBodyOfBasedOnForRemoval [
 AutoRenerakuTest >> testBuildBodyOfBasedOnForRemovalMultiStatement [
 
 	| method data |
-	method := ARSampleWithFlag >> #testOutsideMultiStatementFlag.
+	method := self multiStatementRemovalMethod.
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
-	(autoreneraku buildBodyOf: data basedOn: method).
+	autoreneraku buildBodyOf: data basedOn: method.
 	"At least it should be removed (and replace with nothing, why not?)"
 	self assert: (data at: #body) equals: '```suggestion
 
@@ -103,102 +192,118 @@ AutoRenerakuTest >> testBuildBodyOfBasedOnForRemovalMultiStatement [
 { #category : 'tests' }
 AutoRenerakuTest >> testBuildLineOfBasedOn [
 
-		| method data |
-	method := ARSample >> #testOutside.
+	| method data |
+	method := self correctableMethod.
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
-	(autoreneraku buildLineOf: data basedOn: method).
-	self assert: (data at: #line) equals: 14
+	autoreneraku buildLineOf: data basedOn: method.
+	self assert: (data at: #line) equals: 18
 ]
 
 { #category : 'tests' }
 AutoRenerakuTest >> testBuildStartLineOfBasedOn [
 
-		| method data |
-	method := ARSample >> #testOutside.
+	| method data |
+	method := self correctableMethod.
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
-	(autoreneraku buildStartLineOf: data basedOn: method).
-	self assert: (data at: #start_line) equals: 12
+	autoreneraku buildStartLineOf: data basedOn: method.
+	self assert: (data at: #start_line) equals: 16
 ]
 
 { #category : 'tests' }
 AutoRenerakuTest >> testComputeDiffStartOffsetFor [
 
 	| method |
-	method := ARSample >> #testOutside.
+	method := self correctableMethod.
 	autoreneraku autoCorrectMethod: method.
-	self assert:  (autoreneraku computeDiffStartOffsetFor: method) equals: 5.
+	self
+		assert: (autoreneraku computeDiffStartOffsetFor: method)
+		equals: 5
 ]
 
 { #category : 'tests' }
 AutoRenerakuTest >> testComputeDiffStartOffsetForProtocolUpdate [
 
 	| method |
-	method := ARSampleSubClass >> #testOutside.
+	method := self protocolOnlyChangeMethod.
 	autoreneraku autoCorrectMethod: method.
-	self assert:  (autoreneraku computeDiffStartOffsetFor: method) equals: 1.
+	self
+		assert: (autoreneraku computeDiffStartOffsetFor: method)
+		equals: 1
 ]
 
 { #category : 'tests' }
 AutoRenerakuTest >> testComputeDiffStartOffsetForRemoval [
 
 	| method |
-	method := ARSampleWithFlag >> #testOutside.
+	method := self completeRemovalMethod.
 	autoreneraku autoCorrectMethod: method.
-	self assert:  (autoreneraku computeDiffStartOffsetFor: method) equals: 5.
+	self
+		assert: (autoreneraku computeDiffStartOffsetFor: method)
+		equals: 5
 ]
 
 { #category : 'tests' }
 AutoRenerakuTest >> testComputeDiffStopOffsetFor [
 
 	| method |
-	method := ARSample >> #testOutside.
+	method := self correctableMethod.
 	autoreneraku autoCorrectMethod: method.
-	self assert:  (autoreneraku computeDiffStopOffsetFor: method) equals: 3.
+	self
+		assert: (autoreneraku computeDiffStopOffsetFor: method)
+		equals: 3
 ]
 
 { #category : 'tests' }
 AutoRenerakuTest >> testComputeDiffStopOffsetForProtocolUpdate [
 
 	| method |
-	method := ARSampleSubClass >> #testOutside.
+	method := self protocolOnlyChangeMethod.
 	autoreneraku autoCorrectMethod: method.
-	self assert:  (autoreneraku computeDiffStopOffsetFor: method) equals: 1.
+	self
+		assert: (autoreneraku computeDiffStopOffsetFor: method)
+		equals: 1
 ]
 
 { #category : 'tests' }
 AutoRenerakuTest >> testComputeDiffStopOffsetForRemoval [
 
 	| method |
-	method := ARSampleWithFlag >> #testOutside.
+	method := self completeRemovalMethod.
 	autoreneraku autoCorrectMethod: method.
-	self assert:  (autoreneraku computeDiffStopOffsetFor: method) equals: 0.
+	self
+		assert: (autoreneraku computeDiffStopOffsetFor: method)
+		equals: 0
 ]
 
 { #category : 'tests' }
 AutoRenerakuTest >> testDiffStartOutsideMultiStatementFlag [
 
 	| method |
-	method := ARSampleWithFlag >> #testOutsideMultiStatementFlag.
+	method := self multiStatementRemovalMethod.
 	autoreneraku autoCorrectMethod: method.
-	self assert:  (autoreneraku computeDiffStartOffsetFor: method) equals: 9.
+	self
+		assert: (autoreneraku computeDiffStartOffsetFor: method)
+		equals: 9
 ]
 
 { #category : 'tests' }
 AutoRenerakuTest >> testDiffStopOutsideMultiStatementFlag [
 
 	| method |
-	method := ARSampleWithFlag >> #testOutsideMultiStatementFlag.
+	method := self multiStatementRemovalMethod.
 	autoreneraku autoCorrectMethod: method.
-	self assert:  (autoreneraku computeDiffStopOffsetFor: method) equals: 0
+	self
+		assert: (autoreneraku computeDiffStopOffsetFor: method)
+		equals: 0
 ]
 
 { #category : 'tests' }
 AutoRenerakuTest >> testFillDataWithNewMethodData [
 
 	| method data |
-	method := ARSample >> #testOutside.
+	method := self correctableMethod.
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
 	autoreneraku fillData: data withNewMethodData: method.
@@ -209,7 +314,7 @@ AutoRenerakuTest >> testFillDataWithNewMethodData [
 AutoRenerakuTest >> testFillDataWithNewMethodDataWhenOneLineUpdate [
 
 	| method data |
-	method := ARSampleSubClass >> #testOutside.
+	method := self protocolOnlyChangeMethod.
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
 	autoreneraku fillData: data withNewMethodData: method.
@@ -220,7 +325,7 @@ AutoRenerakuTest >> testFillDataWithNewMethodDataWhenOneLineUpdate [
 AutoRenerakuTest >> testFillDataWithNewMethodDataWhenRemove [
 
 	| method data |
-	method := ARSampleWithFlag >> #testOutside.
+	method := self completeRemovalMethod.
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
 	autoreneraku fillData: data withNewMethodData: method.
@@ -231,25 +336,23 @@ AutoRenerakuTest >> testFillDataWithNewMethodDataWhenRemove [
 AutoRenerakuTest >> testNotFirstMethodInTonel [
 
 	| method2 data |
-
 	(autoreneraku stub suggestNewMethod: Any) willReturn: true.
 
-	autoreneraku autoRenerakuMethod: ARSampleWithFlag >> #testOutside.
-	autoreneraku autoRenerakuMethod: ARSampleWithFlag >> #testOutsideMultiStatementFlagNotFormatted.
+	autoreneraku autoRenerakuMethod: self completeRemovalMethod.
+	autoreneraku autoRenerakuMethod: self notFormattedMethod.
 
-	method2 := ARSampleWithFlag >> #testOutsideMultiStatementFlag.
+	method2 := self multiStatementRemovalMethod.
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method2.
 	autoreneraku buildLineOf: data basedOn: method2.
-	self assert: (data at: #line) equals: 26
+	self assert: (data at: #line) equals: 30
 ]
 
 { #category : 'tests' }
 AutoRenerakuTest >> testNotFormattedDoNothing [
 
 	| method |
-	method := ARSampleWithFlag
-	          >> #testOutsideMultiStatementFlagNotFormatted.
+	method := self notFormattedMethod.
 	self deny: (autoreneraku isMethodFormatted: method).
 	self deny: (autoreneraku autoCorrectMethod: method)
 ]
@@ -258,7 +361,7 @@ AutoRenerakuTest >> testNotFormattedDoNothing [
 AutoRenerakuTest >> testTonelSuggestionBuilderCompleteRemoval [
 
 	| method data |
-	method := ARSampleWithFlag >> #testOutside.
+	method := self completeRemovalMethod.
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
 	(autoreneraku suggestionBuilderFor: method) fillData: data.
@@ -267,8 +370,9 @@ AutoRenerakuTest >> testTonelSuggestionBuilderCompleteRemoval [
 ```'.
 	self
 		assert: (data at: #path)
-		equals: 'src/AutoReneraku-Sample/ARSampleWithFlag.class.st'.
-	self assert: (data at: #line) equals: 12.
+		equals:
+		'src/AutoReneraku-Tests/AutoRenerakuTestSampleWithFlag.class.st'.
+	self assert: (data at: #line) equals: 16.
 	self deny: (data includesKey: #start_line)
 ]
 
@@ -276,7 +380,7 @@ AutoRenerakuTest >> testTonelSuggestionBuilderCompleteRemoval [
 AutoRenerakuTest >> testTonelSuggestionBuilderNotFirstMethodInTonel [
 
 	| method data |
-	method := ARSampleWithFlag >> #testOutsideMultiStatementFlag.
+	method := self multiStatementRemovalMethod.
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
 	(autoreneraku suggestionBuilderFor: method) fillData: data.
@@ -285,8 +389,9 @@ AutoRenerakuTest >> testTonelSuggestionBuilderNotFirstMethodInTonel [
 ```'.
 	self
 		assert: (data at: #path)
-		equals: 'src/AutoReneraku-Sample/ARSampleWithFlag.class.st'.
-	self assert: (data at: #line) equals: 26.
+		equals:
+		'src/AutoReneraku-Tests/AutoRenerakuTestSampleWithFlag.class.st'.
+	self assert: (data at: #line) equals: 30.
 	self deny: (data includesKey: #start_line)
 ]
 
@@ -294,7 +399,7 @@ AutoRenerakuTest >> testTonelSuggestionBuilderNotFirstMethodInTonel [
 AutoRenerakuTest >> testTonelSuggestionBuilderProtocolOnlyChange [
 
 	| method data |
-	method := ARSampleSubClass >> #testOutside.
+	method := self protocolOnlyChangeMethod.
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
 	(autoreneraku suggestionBuilderFor: method) fillData: data.
@@ -303,7 +408,8 @@ AutoRenerakuTest >> testTonelSuggestionBuilderProtocolOnlyChange [
 ```'.
 	self
 		assert: (data at: #path)
-		equals: 'src/AutoReneraku-Sample/ARSampleSubClass.class.st'.
-	self assert: (data at: #line) equals: 8.
+		equals:
+		'src/AutoReneraku-Tests/AutoRenerakuTestSampleSubClass.class.st'.
+	self assert: (data at: #line) equals: 12.
 	self deny: (data includesKey: #start_line)
 ]
