@@ -212,6 +212,15 @@ AutoRenerakuTest >> testBuildStartLineOfBasedOn [
 ]
 
 { #category : 'tests' }
+AutoRenerakuTest >> testClassNameFromChangedFileParsesTonelPath [
+
+	self
+		assert: (autoreneraku classNameFromChangedFile:
+				 'src/AutoReneraku/AutoReneraku.class.st')
+		equals: 'AutoReneraku'
+]
+
+{ #category : 'tests' }
 AutoRenerakuTest >> testComputeDiffStartOffsetFor [
 
 	| method |
@@ -355,6 +364,56 @@ AutoRenerakuTest >> testNotFormattedDoNothing [
 	method := self notFormattedMethod.
 	self deny: (autoreneraku isMethodFormatted: method).
 	self deny: (autoreneraku autoCorrectMethod: method)
+]
+
+{ #category : 'tests' }
+AutoRenerakuTest >> testPrepareAutoRenerakuDoesNotRequireChangedFilesEnvironmentVariable [
+
+	| environment |
+	environment := ARGitHubEnvironment on: (Dictionary new
+			                at: 'GITHUB_REPOSITORY' put: 'owner/AutoReneraku';
+			                at: 'GITHUB_TOKEN' put: 'github-token';
+			                at: 'PULL_REQUEST_NUMBER' put: '42';
+			                at: 'COMMIT_SHA' put: 'abc123';
+			                yourself).
+	autoreneraku stub registerCurrentRepository willReturn: true.
+	(autoreneraku stub token: Any) willReturn: true.
+
+	autoreneraku prepareAutoRenerakuWithEnvironment: environment.
+
+	self assert: autoreneraku methodsToConsider isEmpty.
+	autoreneraku should receive token: 'github-token'
+]
+
+{ #category : 'tests' }
+AutoRenerakuTest >> testPrepareAutoRenerakuUsesInjectedChangedFiles [
+
+	| environment changedFileNames |
+	environment := ARGitHubEnvironment on: (Dictionary new
+			                at: 'GITHUB_REPOSITORY' put: 'owner/AutoReneraku';
+			                at: 'GITHUB_TOKEN' put: 'github-token';
+			                at: 'PAT' put: 'legacy-token';
+			                at: 'PULL_REQUEST_NUMBER' put: '42';
+			                at: 'COMMIT_SHA' put: 'abc123';
+			                yourself).
+	changedFileNames := #( 'src/AutoReneraku-Tests/AutoRenerakuTestSample.class.st'
+	                       'README.md' 'src/AutoReneraku-Tests/MissingClass.class.st' ).
+	autoreneraku stub registerCurrentRepository willReturn: true.
+	(autoreneraku stub token: Any) willReturn: true.
+
+	autoreneraku
+		prepareAutoRenerakuWithEnvironment: environment
+		changedFiles: changedFileNames.
+
+	self assert: autoreneraku projectName equals: 'AutoReneraku'.
+	self assert: autoreneraku commitSha equals: 'abc123'.
+	self
+		assert: autoreneraku url
+		equals:
+		'https://api.github.com/repos/owner/AutoReneraku/pulls/42/comments'.
+	self assert:
+		(autoreneraku methodsToConsider includes: self correctableMethod).
+	autoreneraku should receive token: 'github-token'
 ]
 
 { #category : 'tests' }

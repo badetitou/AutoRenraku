@@ -66,6 +66,31 @@ AutoReneraku >> buildStartLineOf: data basedOn: method [
 		put: (self suggestionBuilderFor: method) startLine
 ]
 
+{ #category : 'private' }
+AutoReneraku >> classNameFromChangedFile: aFileName [
+
+	| basename |
+	basename := (aFileName asString splitOn: '/') last.
+	^ (basename splitOn: '.') first
+]
+
+{ #category : 'private' }
+AutoReneraku >> classNamesFromChangedFiles: changedFileNames [
+
+	^ ((changedFileNames collect: [ :file |
+		    self classNameFromChangedFile: file ]) reject: [ :className |
+		   className isEmpty ]) asSet asArray
+]
+
+{ #category : 'private' }
+AutoReneraku >> classesFromChangedFiles: changedFileNames [
+
+	| classes |
+	classes := (self classNamesFromChangedFiles: changedFileNames)
+		           collect: [ :className | Smalltalk classNamed: className ].
+	^ classes reject: [ :clazz | clazz isNil ]
+]
+
 { #category : 'accessing' }
 AutoReneraku >> commitSha [
 
@@ -96,6 +121,13 @@ AutoReneraku >> computeDifferencesFor: method [
 	^ (self suggestionBuilderFor: method) differences
 ]
 
+{ #category : 'private' }
+AutoReneraku >> considerChangedFiles: changedFileNames [
+
+	methodsToConsider := (self classesFromChangedFiles: changedFileNames)
+		                     flatCollect: [ :clazz | clazz methods ]
+]
+
 { #category : 'accessing' }
 AutoReneraku >> extractStartPosOf: method [
 
@@ -114,6 +146,7 @@ AutoReneraku >> initialize [
 	super initialize.
 	client := ZnClient new.
 	client forJsonREST.
+	methodsToConsider := #(  ).
 	suggestionBuilders := Dictionary new
 ]
 
@@ -130,6 +163,12 @@ AutoReneraku >> methodConcernedBy: renerakuCritic [
 	^ renerakuCritic entity methodNode compiledMethod
 ]
 
+{ #category : 'accessing' }
+AutoReneraku >> methodsToConsider [
+
+	^ methodsToConsider
+]
+
 { #category : 'private' }
 AutoReneraku >> post: url contents: someData [
 
@@ -139,39 +178,33 @@ AutoReneraku >> post: url contents: someData [
 { #category : 'api' }
 AutoReneraku >> prepareAutoReneraku [
 
-	| filesNames classesNames classes prNumber |
-	projectName := ((Smalltalk os environment at: 'GITHUB_REPOSITORY')
-		                splitOn: '/') last.
+	^ self prepareAutoRenerakuWithEnvironment:
+		  ARGitHubEnvironment current
+]
 
-	[
-	(IceRepositoryCreator new
-		 location: '.' asFileReference;
-		 subdirectory: 'src';
-		 createRepository)
-		name: projectName;
-		register ]
-		on: IceDuplicatedRepository
-		do: [
-			Stdio stderr << 'Repository already installed in the image'.
-			Stdio stderr << IceRepository registry printString ].
+{ #category : 'api' }
+AutoReneraku >> prepareAutoRenerakuWithChangedFiles: changedFileNames [
 
+	^ self
+		  prepareAutoRenerakuWithEnvironment: ARGitHubEnvironment current
+		  changedFiles: changedFileNames
+]
 
+{ #category : 'api' }
+AutoReneraku >> prepareAutoRenerakuWithEnvironment: aGitHubEnvironment [
 
-	filesNames := (Smalltalk os environment at: 'changed_files')
-		              splitOn: ' '.
-	classesNames := filesNames collect: [ :file |
-		                ((file splitOn: '/') last splitOn: '.') first ].
-	classes := classesNames collect: [ :className |
-		           Smalltalk classNamed: className ].
-	methodsToConsider := (classes reject: [ :clazz |
-		                      clazz isNil "in case class is not found" ])
-		                     flatCollect: [ :clazz | clazz methods ].
-	self token: (Smalltalk os environment at: 'PAT').
-	prNumber := Smalltalk os environment at: 'PULL_REQUEST_NUMBER'.
-	url := 'https://api.github.com/repos/'
-	       , (Smalltalk os environment at: 'GITHUB_REPOSITORY')
-	       , '/pulls/' , prNumber , '/comments'.
-	commitSha := Smalltalk os environment at: 'COMMIT_SHA'
+	projectName := aGitHubEnvironment projectName.
+	self registerCurrentRepository.
+	self token: aGitHubEnvironment token.
+	url := aGitHubEnvironment pullRequestCommentsUrl.
+	commitSha := aGitHubEnvironment commitSha
+]
+
+{ #category : 'api' }
+AutoReneraku >> prepareAutoRenerakuWithEnvironment: aGitHubEnvironment changedFiles: changedFileNames [
+
+	self prepareAutoRenerakuWithEnvironment: aGitHubEnvironment.
+	self considerChangedFiles: changedFileNames
 ]
 
 { #category : 'accessing' }
@@ -184,6 +217,22 @@ AutoReneraku >> projectName [
 AutoReneraku >> projectName: anObject [
 
 	projectName := anObject
+]
+
+{ #category : 'private' }
+AutoReneraku >> registerCurrentRepository [
+
+	[
+		(IceRepositoryCreator new
+			 location: '.' asFileReference;
+			 subdirectory: 'src';
+			 createRepository)
+			name: projectName;
+			register ]
+		on: IceDuplicatedRepository
+		do: [
+				Stdio stderr << 'Repository already installed in the image'.
+				Stdio stderr << IceRepository registry printString ]
 ]
 
 { #category : 'private' }
