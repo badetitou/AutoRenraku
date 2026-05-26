@@ -34,6 +34,17 @@ AutoRenerakuTest >> tearDown [
 ]
 
 { #category : 'tests' }
+AutoRenerakuTest >> testAutoRenerakuMethodSkipsNotFormattedSuggestion [
+
+	| method |
+	method := ARSampleWithFlag
+	          >> #testOutsideMultiStatementFlagNotFormatted.
+	(autoreneraku stub suggestNewMethod: Any) willReturn: true.
+	autoreneraku autoRenerakuMethod: method.
+	autoreneraku should not receive suggestNewMethod: Any
+]
+
+{ #category : 'tests' }
 AutoRenerakuTest >> testBuildBodyOfBasedOn [
 
 	| method data |
@@ -241,4 +252,58 @@ AutoRenerakuTest >> testNotFormattedDoNothing [
 	          >> #testOutsideMultiStatementFlagNotFormatted.
 	self deny: (autoreneraku isMethodFormatted: method).
 	self deny: (autoreneraku autoCorrectMethod: method)
+]
+
+{ #category : 'tests' }
+AutoRenerakuTest >> testTonelSuggestionBuilderCompleteRemoval [
+
+	| method data |
+	method := ARSampleWithFlag >> #testOutside.
+	data := Dictionary new.
+	autoreneraku autoCorrectMethod: method.
+	(autoreneraku suggestionBuilderFor: method) fillData: data.
+	self assert: (data at: #body) equals: '```suggestion
+
+```'.
+	self
+		assert: (data at: #path)
+		equals: 'src/AutoReneraku-Sample/ARSampleWithFlag.class.st'.
+	self assert: (data at: #line) equals: 12.
+	self deny: (data includesKey: #start_line)
+]
+
+{ #category : 'tests' }
+AutoRenerakuTest >> testTonelSuggestionBuilderNotFirstMethodInTonel [
+
+	| method data |
+	method := ARSampleWithFlag >> #testOutsideMultiStatementFlag.
+	data := Dictionary new.
+	autoreneraku autoCorrectMethod: method.
+	(autoreneraku suggestionBuilderFor: method) fillData: data.
+	self assert: (data at: #body) equals: '```suggestion
+
+```'.
+	self
+		assert: (data at: #path)
+		equals: 'src/AutoReneraku-Sample/ARSampleWithFlag.class.st'.
+	self assert: (data at: #line) equals: 26.
+	self deny: (data includesKey: #start_line)
+]
+
+{ #category : 'tests' }
+AutoRenerakuTest >> testTonelSuggestionBuilderProtocolOnlyChange [
+
+	| method data |
+	method := ARSampleSubClass >> #testOutside.
+	data := Dictionary new.
+	autoreneraku autoCorrectMethod: method.
+	(autoreneraku suggestionBuilderFor: method) fillData: data.
+	self assert: (data at: #body) equals: '```suggestion
+{ #category : ''tests'' }
+```'.
+	self
+		assert: (data at: #path)
+		equals: 'src/AutoReneraku-Sample/ARSampleSubClass.class.st'.
+	self assert: (data at: #line) equals: 8.
+	self deny: (data includesKey: #start_line)
 ]

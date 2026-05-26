@@ -7,7 +7,8 @@ Class {
 		'projectName',
 		'methodsToConsider',
 		'url',
-		'commitSha'
+		'commitSha',
+		'suggestionBuilders'
 	],
 	#category : 'AutoReneraku',
 	#package : 'AutoReneraku'
@@ -22,8 +23,10 @@ AutoReneraku >> autoCorrectMethod: aMethod [
 	critiques := aMethod critiques.
 	toApplyCritique := critiques select: [ :critique |
 		                   critique providesChange ].
+	toApplyCritique ifEmpty: [ ^ false ].
+	self rememberSuggestionBuilderFor: aMethod.
 	toApplyCritique do: [ :critique | critique change execute ].
-	^ toApplyCritique isNotEmpty
+	^ true
 ]
 
 { #category : 'api' }
@@ -40,63 +43,27 @@ AutoReneraku >> autoRenerakuMethod: aMethod [
 { #category : 'private' }
 AutoReneraku >> buildBodyOf: data basedOn: aMethod [
 
-	| startChange stopChange |
-	data at: #body put: ((String streamContents: [ :str |
-			  | changeBody |
-			  str << '```suggestion
-'.
-
-			  changeBody := String streamContents: [ :ch |
-				                TonelWriter new
-					                writeMethodDefinition:
-					                aMethod asRingDefinition asMCMethodDefinition
-					                parent: aMethod methodClass asClassDefinition
-					                on: ch ].
-			  startChange := self computeDiffStartOffsetFor: aMethod.
-			  stopChange := self computeDiffStopOffsetFor: aMethod.
-			  str << (String cr join: (changeBody lines allButFirst
-					    copyFrom: startChange
-					    to: startChange + stopChange - 1)).
-
-			  str << '
-```' ]) copyReplaceAll: OSPlatform current lineEnding with: String cr)
+	data at: #body put: (self suggestionBuilderFor: aMethod) body
 ]
 
 { #category : 'private' }
 AutoReneraku >> buildLineOf: data basedOn: method [
 
-	| startChar sc diffStop line |
-	sc := TonelWriter sourceCodeOf: method methodClass.
-	startChar := self extractStartPosOf: method.
-	diffStop := self computeDiffStopOffsetFor: method.
-	line := ((sc arToLineCharacter: startChar) at: #line)
-	        + (self computeDiffStartOffsetFor: method) - 1.
-	diffStop ~= 0 ifTrue: [ line := line + diffStop - 1 ].
-	data at: #line put: line
+	data at: #line put: (self suggestionBuilderFor: method) line
 ]
 
 { #category : 'private' }
 AutoReneraku >> buildPathOf: data basedOn: method [
 
-	data at: #path put: (String streamContents: [ :str |
-			 str << 'src/'.
-			 str
-			 <<
-			 method methodClass package name.
-			 str << '/'.
-			 str << method methodClass name.
-			 str << '.class.st' ])
+	data at: #path put: (self suggestionBuilderFor: method) path
 ]
 
 { #category : 'private' }
 AutoReneraku >> buildStartLineOf: data basedOn: method [
 
-	| startChar sc |
-	sc := TonelWriter sourceCodeOf: method methodClass.
-	startChar := self extractStartPosOf: method.
 	data
 		at: #start_line
-		put: ((sc arToLineCharacter: startChar) at: #line) + (self computeDiffStartOffsetFor: method) - 1 "-1 diff pharo"
+		put: (self suggestionBuilderFor: method) startLine
 ]
 
 { #category : 'accessing' }
@@ -114,80 +81,31 @@ AutoReneraku >> commitSha: anObject [
 { #category : 'accessing' }
 AutoReneraku >> computeDiffStartOffsetFor: method [
 
-	| differences |
-	differences := self computeDifferencesFor: method.
-	^ differences findFirst: [ :diff | diff key ~= 'match' ]
+	^ (self suggestionBuilderFor: method) diffStartOffset
 ]
 
 { #category : 'accessing' }
 AutoReneraku >> computeDiffStopOffsetFor: method [
 
-	| differences insert remove |
-	differences := self computeDifferencesFor: method.
-	insert := differences count: [ :diff | diff key = 'insert' ].
-	remove := differences count: [ :diff | diff key = 'remove' ].
-	^ remove min: insert
+	^ (self suggestionBuilderFor: method) diffStopOffset
 ]
 
 { #category : 'accessing' }
 AutoReneraku >> computeDifferencesFor: method [
 
-	| registry iceDiff diffChild realModification differences |
-	registry := IceRepository registry detect: [ :r |
-		            r name = self projectName ].
-	iceDiff := IceDiff new
-		           sourceVersion: registry headCommit;
-		           targetVersion: registry workingCopy;
-		           buildForPackages:
-			           { (registry packageNamed:
-					            method methodClass package name) }.
-
-	diffChild := (iceDiff tree allChildren select: [ :child |
-		              child key = method selector and: [
-			              child parent key = method methodClass name ] ])
-		             anyOne.
-	realModification := diffChild value.
-	^ differences := (DiffMorph
-		                  from: realModification leftContents
-		                  to: realModification rightContents) difference
+	^ (self suggestionBuilderFor: method) differences
 ]
 
 { #category : 'accessing' }
 AutoReneraku >> extractStartPosOf: method [
 
-	| startChar startLine sc firstLine aMethodDefinition aClassDefinition |
-	sc := TonelWriter sourceCodeOf: method methodClass.
-	aMethodDefinition := method asRingDefinition asMCMethodDefinition.
-	aClassDefinition := method methodClass asClassDefinition.
-	firstLine := String streamContents: [ :str |
-		             | fullClassName writer |
-		             writer := TonelWriter new.
-		             fullClassName := writer
-			                              classNameFor: aMethodDefinition
-			                              parent: aClassDefinition.
-		             TonelWriter new
-			             splitMethodSource:
-			             method asRingDefinition asMCMethodDefinition
-			             into: [ :methodDeclaration :methodBody |
-				             str << fullClassName << ' >> ' << methodDeclaration ] ].
-	startChar := sc findString: firstLine.
-	startLine := startChar.
-	^ startLine
+	^ (self suggestionBuilderFor: method) methodStartCharacter
 ]
 
 { #category : 'private' }
 AutoReneraku >> fillData: data withNewMethodData: aMethod [
 
-	self buildBodyOf: data basedOn: aMethod.
-	self buildPathOf: data basedOn: aMethod.
-	self buildStartLineOf: data basedOn: aMethod.
-	self buildLineOf: data basedOn: aMethod.
-
-	(data at: #start_line) >= (data at: #line) ifTrue: [
-		data at: #line put: (data at: #start_line).
-		data removeKey: #start_line ].
-
-	^ data
+	^ (self suggestionBuilderFor: aMethod) fillData: data
 ]
 
 { #category : 'initialization' }
@@ -195,7 +113,8 @@ AutoReneraku >> initialize [
 
 	super initialize.
 	client := ZnClient new.
-	client forJsonREST
+	client forJsonREST.
+	suggestionBuilders := Dictionary new
 ]
 
 { #category : 'accessing' }
@@ -267,6 +186,15 @@ AutoReneraku >> projectName: anObject [
 	projectName := anObject
 ]
 
+{ #category : 'private' }
+AutoReneraku >> rememberSuggestionBuilderFor: aMethod [
+
+	suggestionBuilders ifNil: [ suggestionBuilders := Dictionary new ].
+	suggestionBuilders
+		at: (self suggestionBuilderKeyFor: aMethod)
+		put: (ARTonelSuggestionBuilder forOriginalMethod: aMethod)
+]
+
 { #category : 'api' }
 AutoReneraku >> run [
 
@@ -281,6 +209,25 @@ AutoReneraku >> suggestNewMethod: aMethod [
 	data at: 'commit_id' put: commitSha.
 	self fillData: data withNewMethodData: aMethod.
 	^ self post: url contents: data
+]
+
+{ #category : 'private' }
+AutoReneraku >> suggestionBuilderFor: aMethod [
+
+	suggestionBuilders ifNil: [ suggestionBuilders := Dictionary new ].
+	^ suggestionBuilders
+		  at: (self suggestionBuilderKeyFor: aMethod)
+		  ifAbsentPut: [
+		  ARTonelSuggestionBuilder forOriginalMethod: aMethod ]
+]
+
+{ #category : 'private' }
+AutoReneraku >> suggestionBuilderKeyFor: aMethod [
+
+	^ {
+		  aMethod methodClass instanceSide name.
+		  aMethod methodClass isMeta.
+		  aMethod selector }
 ]
 
 { #category : 'accessing' }
