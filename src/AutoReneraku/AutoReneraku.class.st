@@ -8,24 +8,28 @@ Class {
 		'methodsToConsider',
 		'url',
 		'commitSha',
-		'suggestionBuilders'
+		'suggestionBuilders',
+		'dryRun'
 	],
 	#category : 'AutoReneraku',
 	#package : 'AutoReneraku'
 }
+
+{ #category : 'private' }
+AutoReneraku >> applyCritiques: aCollection to: aMethod [
+
+	self rememberSuggestionBuilderFor: aMethod.
+	aCollection do: [ :critique | critique change execute ]
+]
 
 { #category : 'api' }
 AutoReneraku >> autoCorrectMethod: aMethod [
 	"I return true if I applied some modification"
 
 	| toApplyCritique |
-	(self isMethodFormatted: aMethod) ifFalse: [ ^ false ].
-	critiques := aMethod critiques.
-	toApplyCritique := critiques select: [ :critique |
-		                   critique providesChange ].
+	toApplyCritique := self critiquesToApplyFor: aMethod.
 	toApplyCritique ifEmpty: [ ^ false ].
-	self rememberSuggestionBuilderFor: aMethod.
-	toApplyCritique do: [ :critique | critique change execute ].
+	self applyCritiques: toApplyCritique to: aMethod.
 	^ true
 ]
 
@@ -33,11 +37,39 @@ AutoReneraku >> autoCorrectMethod: aMethod [
 AutoReneraku >> autoRenerakuMethod: aMethod [
 	"I return true if I applied some modification"
 
-	| savedDefinition |
+	^ (self autoRenerakuMethod: aMethod dryRun: self dryRun) notNil
+]
+
+{ #category : 'api' }
+AutoReneraku >> autoRenerakuMethod: aMethod dryRun: aBoolean [
+
+	| savedDefinition toApplyCritique suggestion |
 	savedDefinition := aMethod.
-	^ (self autoCorrectMethod: aMethod) ifTrue: [
-		  self suggestNewMethod: aMethod.
-		  savedDefinition methodClass compile: savedDefinition sourceCode ]
+	toApplyCritique := self critiquesToApplyFor: aMethod.
+	toApplyCritique ifEmpty: [ ^ nil ].
+	[
+		self applyCritiques: toApplyCritique to: aMethod.
+		suggestion := aBoolean
+			              ifTrue: [ self buildSuggestionForMethod: aMethod ]
+			              ifFalse: [ self suggestNewMethod: aMethod ].
+		^ suggestion ] ensure: [
+			savedDefinition methodClass
+				compile: savedDefinition sourceCode
+				classified: savedDefinition protocol ]
+]
+
+{ #category : 'api' }
+AutoReneraku >> beDryRun [
+
+	self dryRun: true.
+	^ self
+]
+
+{ #category : 'api' }
+AutoReneraku >> bePosting [
+
+	self dryRun: false.
+	^ self
 ]
 
 { #category : 'private' }
@@ -64,6 +96,16 @@ AutoReneraku >> buildStartLineOf: data basedOn: method [
 	data
 		at: #start_line
 		put: (self suggestionBuilderFor: method) startLine
+]
+
+{ #category : 'private' }
+AutoReneraku >> buildSuggestionForMethod: aMethod [
+
+	| data |
+	data := Dictionary new.
+	data at: 'commit_id' put: commitSha.
+	self fillData: data withNewMethodData: aMethod.
+	^ data
 ]
 
 { #category : 'private' }
@@ -128,6 +170,27 @@ AutoReneraku >> considerChangedFiles: changedFileNames [
 		                     flatCollect: [ :clazz | clazz methods ]
 ]
 
+{ #category : 'private' }
+AutoReneraku >> critiquesToApplyFor: aMethod [
+
+	(self isMethodFormatted: aMethod) ifFalse: [ ^ #(  ) ].
+	critiques := aMethod critiques.
+	^ critiques select: [ :critique | critique providesChange ]
+]
+
+{ #category : 'accessing' }
+AutoReneraku >> dryRun [
+
+	^ dryRun ifNil: [ false ]
+]
+
+{ #category : 'accessing' }
+AutoReneraku >> dryRun: aBoolean [
+
+	dryRun := aBoolean.
+	^ self
+]
+
 { #category : 'accessing' }
 AutoReneraku >> extractStartPosOf: method [
 
@@ -147,7 +210,8 @@ AutoReneraku >> initialize [
 	client := ZnClient new.
 	client forJsonREST.
 	methodsToConsider := #(  ).
-	suggestionBuilders := Dictionary new
+	suggestionBuilders := Dictionary new.
+	dryRun := false
 ]
 
 { #category : 'accessing' }
@@ -167,6 +231,12 @@ AutoReneraku >> methodConcernedBy: renerakuCritic [
 AutoReneraku >> methodsToConsider [
 
 	^ methodsToConsider
+]
+
+{ #category : 'accessing' }
+AutoReneraku >> methodsToConsider: aCollection [
+
+	methodsToConsider := aCollection
 ]
 
 { #category : 'private' }
@@ -244,20 +314,50 @@ AutoReneraku >> rememberSuggestionBuilderFor: aMethod [
 		put: (ARTonelSuggestionBuilder forOriginalMethod: aMethod)
 ]
 
+{ #category : 'private' }
+AutoReneraku >> reviewMethod: aMethod into: aResult dryRun: aBoolean [
+
+	[
+		| suggestion |
+		suggestion := self autoRenerakuMethod: aMethod dryRun: aBoolean.
+		suggestion
+			ifNil: [ aResult recordIgnoredMethod: aMethod ]
+			ifNotNil: [
+					aResult recordCorrectedMethod: aMethod suggestion: suggestion.
+					aBoolean ifFalse: [ aResult recordPostedSuggestion: suggestion ] ] ]
+		on: Error
+		do: [ :error | aResult recordError: error forMethod: aMethod ]
+]
+
 { #category : 'api' }
 AutoReneraku >> run [
 
-	methodsToConsider do: [ :method | self autoRenerakuMethod: method ]
+	^ self runDryRun: self dryRun
+]
+
+{ #category : 'api' }
+AutoReneraku >> runDry [
+
+	^ self runDryRun: true
+]
+
+{ #category : 'api' }
+AutoReneraku >> runDryRun: aBoolean [
+
+	| result |
+	result := ARReviewRunResult new.
+	methodsToConsider do: [ :method |
+		self reviewMethod: method into: result dryRun: aBoolean ].
+	^ result
 ]
 
 { #category : 'api' }
 AutoReneraku >> suggestNewMethod: aMethod [
 
 	| data |
-	data := Dictionary new.
-	data at: 'commit_id' put: commitSha.
-	self fillData: data withNewMethodData: aMethod.
-	^ self post: url contents: data
+	data := self buildSuggestionForMethod: aMethod.
+	self post: url contents: data.
+	^ data
 ]
 
 { #category : 'private' }

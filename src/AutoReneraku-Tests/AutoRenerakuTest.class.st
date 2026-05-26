@@ -46,6 +46,9 @@ AutoRenerakuTest >> installFixtureMethods [
 	AutoRenerakuTestSample
 		compile: self correctableFixtureSource
 		classified: 'tests'.
+	AutoRenerakuTestSample
+		compile: self noCritiqueFixtureSource
+		classified: 'tests'.
 	AutoRenerakuTestSampleSubClass
 		compile: self protocolOnlyChangeFixtureSource
 		classified: 'execution'.
@@ -75,6 +78,18 @@ AutoRenerakuTest >> multiStatementRemovalFixtureSource [
 AutoRenerakuTest >> multiStatementRemovalMethod [
 
 	^ AutoRenerakuTestSampleWithFlag >> #testOutsideMultiStatementFlag
+]
+
+{ #category : 'fixtures' }
+AutoRenerakuTest >> noCritiqueFixtureSource [
+
+	^ String cr join: #( 'testWithoutCritique' '' '	self assert: true' )
+]
+
+{ #category : 'fixtures' }
+AutoRenerakuTest >> noCritiqueMethod [
+
+	^ AutoRenerakuTestSample >> #testWithoutCritique
 ]
 
 { #category : 'fixtures' }
@@ -414,6 +429,100 @@ AutoRenerakuTest >> testPrepareAutoRenerakuUsesInjectedChangedFiles [
 	self assert:
 		(autoreneraku methodsToConsider includes: self correctableMethod).
 	autoreneraku should receive token: 'github-token'
+]
+
+{ #category : 'tests' }
+AutoRenerakuTest >> testRunContinuesAfterPublicationError [
+
+	| failingMethod ignoredMethod result |
+	failingMethod := self correctableMethod.
+	ignoredMethod := self notFormattedMethod.
+	(autoreneraku stub suggestNewMethod: Any) willRaise: Error new.
+	autoreneraku methodsToConsider: {
+			failingMethod.
+			ignoredMethod }.
+
+	result := autoreneraku run.
+
+	self assert: result erroredMethods equals: { failingMethod }.
+	self assert: result ignoredMethods equals: { ignoredMethod }.
+	self assert: result correctedMethods isEmpty.
+	self assert: result postedSuggestions isEmpty.
+	self
+		assert:
+		(failingMethod methodClass sourceCodeAt: failingMethod selector)
+		equals: self correctableFixtureSource
+]
+
+{ #category : 'tests' }
+AutoRenerakuTest >> testRunDryBuildsSuggestionsWithoutPosting [
+
+	| method result suggestion |
+	method := self correctableMethod.
+	autoreneraku commitSha: 'abc123'.
+	autoreneraku methodsToConsider: { method }.
+	(autoreneraku stub post: Any contents: Any) willRaise: Error new.
+
+	result := autoreneraku runDry.
+
+	self assert: result correctedMethods equals: { method }.
+	self assert: result ignoredMethods isEmpty.
+	self assert: result erroredMethods isEmpty.
+	self assert: result postedSuggestions isEmpty.
+	self assert: result builtSuggestions size equals: 1.
+	suggestion := result builtSuggestions first.
+	self assert: (suggestion at: 'commit_id') equals: 'abc123'.
+	autoreneraku should not receive post: Any contents: Any
+]
+
+{ #category : 'tests' }
+AutoRenerakuTest >> testRunIgnoresMethodWithoutCritique [
+
+	| method result |
+	method := self noCritiqueMethod.
+	autoreneraku methodsToConsider: { method }.
+
+	result := autoreneraku run.
+
+	self assert: result ignoredMethods equals: { method }.
+	self assert: result correctedMethods isEmpty.
+	self assert: result erroredMethods isEmpty.
+	self assert: result postedSuggestions isEmpty
+]
+
+{ #category : 'tests' }
+AutoRenerakuTest >> testRunIgnoresNotFormattedMethod [
+
+	| method result |
+	method := self notFormattedMethod.
+	autoreneraku methodsToConsider: { method }.
+
+	result := autoreneraku run.
+
+	self assert: result ignoredMethods equals: { method }.
+	self assert: result correctedMethods isEmpty.
+	self assert: result erroredMethods isEmpty.
+	self assert: result postedSuggestions isEmpty
+]
+
+{ #category : 'tests' }
+AutoRenerakuTest >> testRunRecordsPostedSuggestion [
+
+	| method result suggestion |
+	method := self correctableMethod.
+	autoreneraku commitSha: 'abc123'.
+	autoreneraku url: 'comments-url'.
+	autoreneraku methodsToConsider: { method }.
+	(autoreneraku stub post: Any contents: Any) willReturn: true.
+
+	result := autoreneraku run.
+
+	self assert: result correctedMethods equals: { method }.
+	self assert: result ignoredMethods isEmpty.
+	self assert: result erroredMethods isEmpty.
+	self assert: result postedSuggestions size equals: 1.
+	suggestion := result postedSuggestions first.
+	self assert: (suggestion at: 'commit_id') equals: 'abc123'
 ]
 
 { #category : 'tests' }

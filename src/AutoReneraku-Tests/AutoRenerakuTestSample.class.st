@@ -17,3 +17,9 @@ AutoRenerakuTestSample >> testOutside [
 		ifTrue: [ outside := 3 ]
 		ifFalse: [ outside := 4 ]
 ]
+
+{ #category : 'tests' }
+AutoRenerakuTestSample >> testWithoutCritique [
+
+	self assert: true
+]
