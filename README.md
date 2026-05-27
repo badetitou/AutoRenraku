@@ -1,125 +1,257 @@
-# Autoreneraku
+# AutoRenraku
 
 [![Coverage Status](https://coveralls.io/repos/github/badetitou/AutoReneraku/badge.svg?branch=main)](https://coveralls.io/github/badetitou/AutoReneraku?branch=main)
 
-## Setup
+Automatic code review for Pharo projects using Renraku critiques.
 
-This project uses variables from [Smalltalk-CI](https://github.com/hpi-swa/smalltalkCI) for now.
-So one need first to setup smalltalk-ci to test its project.
+AutoRenraku applies auto-fixable Renraku critiques in a Pharo image and turns
+the corrected code into GitHub pull request suggestions.
 
-### Create token
+## Install In Pharo
 
-We cannot use the generic GitHub token when using autoreneraku, so we will define a fine-grained token.
-There is two options: a Personal Access Token, or creating a GitHub app that will act instead of a user.
+Core package only:
 
-#### Personal Access Token
-
-> This token can also be created as part of organization for better usability
-
-1. in https://github.com/settings/personal-access-tokens/new
-2. Select the repositories for this token (one, or all the repository you wanna use AutoReneraku)
-3. Select: `Pull Requests` with Read and Write access
-4. Set the variable in your repo `settings/secrets/actions` as PAT
-
-#### GitHub app
-
-If you want to use a github app:
-
-1. First create one attached to [your personal account](https://github.com/settings/apps) or an organisation account.
-2. Unckeck all options, and select for permissions: `Pull Requests` with Read and Write access
-3. Create a Private Key and keep it
-4. Keep the AppID
-5. Install the app in the repositories you want to use the project.
-6. Add as secrets the Private Key and AppID (for instance with secrets `AUTO_RENERAKU_APP_ID`, and `AUTO_RENERAKU_PRIVATE_KEY`)
-
-Then, check the next section with the possible adaptation.
-
-
-### Update your ci configuration
-
-You need to add
-
-1. Checkout your all project
-    ```yml
-    - uses: actions/checkout@v2
-      with:
-        fetch-depth: '0'
-    ```
-2. Add the AutoReneraku step
-    ```yml
-    - name: AutoReneraku
-      uses: badetitou/AutoReneraku@main
-      with:
-        pat: ${{ secrets.PAT }}
-      if: github.event_name == 'pull_request'
-    ```
-
-If you use the *GitHub app* approach, consider this piece of code for the Autoreneraku step
-
-```yml
-# Auto Reneraku
-- name: Generate a token
-  id: generate-token
-  uses: actions/create-github-app-token@v1
-  with:
-    app-id: ${{ secrets.AUTO_RENERAKU_APP_ID }}
-    private-key: ${{ secrets.AUTO_RENERAKU_PRIVATE_KEY }}
-- name: AutoReneraku
-  uses: badetitou/AutoReneraku@main
-  with:
-    pat:  ${{ steps.generate-token.outputs.token }}
+```st
+Metacello new
+  baseline: 'AutoReneraku';
+  repository: 'github://badetitou/AutoRenraku:main/src';
+  load
 ```
 
+Core package plus the UI:
 
-Full example:
+```st
+Metacello new
+  baseline: 'AutoReneraku';
+  repository: 'github://badetitou/AutoRenraku:main/src';
+  load: 'ui'
+```
+
+Available Metacello groups:
+
+- `default`: core only
+- `core`: `AutoReneraku`
+- `ui`: `AutoRenraku-UI`
+- `tests`: core tests and UI tests
+
+## Open The UI
+
+After loading the `ui` group, open AutoRenraku from a Playground:
+
+```st
+AutoRenrakuUIApplication open
+```
+
+The UI lets you enter:
+
+- the GitHub repository, for example `badetitou/AutoRenraku`
+- the pull request number
+- an optional GitHub token
+
+The token is never stored in Pharo settings. If the token field is empty, the UI
+falls back to `GITHUB_TOKEN`, then `PAT`, from the image environment.
+
+The Pharo settings are available under `Tools > AutoRenraku` and persist only:
+
+- default repository
+- last pull request number
+- whether the result panel should open after a run
+
+## UI Actions
+
+### Dry Run
+
+`Dry run` fetches an existing pull request, builds the suggestions, and posts
+nothing to GitHub.
+
+The same operation can be run directly from a Playground:
+
+```st
+result := AutoReneraku
+  dryRunPullRequest: 42
+  repository: 'badetitou/AutoRenraku'.
+
+result builtSuggestions inspect.
+result warnings inspect.
+result methodErrors inspect.
+```
+
+For private repositories, pass a token explicitly:
+
+```st
+result := AutoReneraku
+  dryRunPullRequest: 42
+  repository: 'owner/private-repository'
+  token: '<github-token>'.
+```
+
+### Post Comments
+
+`Post comments` builds the same suggestions, then posts them as GitHub pull
+request review comments.
+
+AutoRenraku posts to the pull request `review_comments_url`, not to the issue
+`comments_url`, so GitHub can render valid blocks as suggested changes.
+
+When warnings are detected, the UI asks for confirmation before posting.
+
+## Important UI Notes
+
+The UI uses the code currently loaded in the Pharo image. It does not checkout
+the pull request branch automatically.
+
+AutoRenraku warns when it can detect likely mismatches, including:
+
+- no matching Iceberg repository is registered in the image
+- the loaded Iceberg checkout does not match the pull request `head.sha`
+- a changed Tonel class is not loaded in the image
+- no changed file or method can be reviewed
+
+For best results, load or checkout the same code as the pull request before
+posting comments.
+
+## Use In GitHub Actions
+
+AutoRenraku is usually run after the project has been loaded and tested by
+smalltalkCI.
+
+Minimal permissions:
 
 ```yml
-name: myCI
+permissions:
+  contents: read
+  pull-requests: write
+```
 
-# Controls when the action will run. Triggers the workflow on push or pull request
-# events but only for the development branch
+Example workflow:
+
+```yml
+name: CI
+
 on:
   pull_request:
-    branches: 
-      - v*
+    branches:
       - main
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        smalltalk: [ Pharo64-12  ]
-    name: ${{ matrix.smalltalk }}
+
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: '0'
+          fetch-depth: 0
+
       - uses: hpi-swa/setup-smalltalkCI@v1
         id: smalltalkci
         with:
-          smalltalk-image: ${{ matrix.smalltalk }}
-      - run: smalltalkci -s ${{ steps.smalltalkci.outputs.smalltalk-image }} .smalltalk-autoreneraku.ston
+          smalltalk-image: Pharo64-12
+
+      - run: smalltalkci -s ${{ steps.smalltalkci.outputs.smalltalk-image }} .smalltalk.ston
         shell: bash
         timeout-minutes: 15
-      - name: AutoReneraku
-        uses: badetitou/AutoReneraku@main
+
+      - name: AutoRenraku
+        uses: badetitou/AutoRenraku@main
         with:
-          pat: ${{ secrets.PAT }}
+          pat: ${{ secrets.GITHUB_TOKEN }}
         if: github.event_name == 'pull_request'
 ```
 
-## Developer
+The action input is still named `pat` for backward compatibility. For most
+repositories, GitHub's built-in `GITHUB_TOKEN` is enough.
 
-It is possible to debug locally with a script like this one:
+Use a fine-grained personal access token or GitHub App token only when your
+organization restricts the default token or when comments must be created by a
+specific identity. A fine-grained token needs repository access and
+`Pull requests: Read and write`.
+
+## Local Core Usage
+
+You can run AutoRenraku against methods already loaded in the image:
 
 ```st
 auto := AutoReneraku new.
-auto projectName: 'AutoReneraku-Sample'.
-auto token: '<token>'.
-auto url: 'https://api.github.com/repos/badetitou/AutoReneraku-Sample/pulls/3/comments'.
-auto commitSha: '5f2c0995a5c9d19b679f77fd5d3f496d4c668d72'.
-class := ARSample.
-methods := class methods.
-methods do: [ :method | auto autoRenerakuMethod: method ]
+auto
+  projectName: 'MyProject';
+  commitSha: 'local-dry-run';
+  methodsToConsider: { MyClass >> #myMethod }.
+
+result := auto runDry.
+result builtSuggestions inspect.
+result ignoredMethods inspect.
+result erroredMethods inspect.
 ```
+
+`runDry` never posts comments. `run` posts comments when the instance has a
+token, commit SHA, target URL, and methods to review.
+
+The result is an `ARReviewRunResult` with:
+
+- corrected methods
+- ignored methods
+- errored methods
+- built suggestions
+- posted suggestions
+- method errors
+- warnings
+
+## How Suggestions Are Built
+
+AutoRenraku temporarily applies Renraku fixes in the image, computes the Tonel
+diff for the changed method, builds a GitHub suggestion body, then restores the
+original method source.
+
+Suggestion bodies use GitHub `suggestion` fences and LF line endings. Review
+comments are positioned on the right side of the pull request diff.
+
+Methods that cannot be mapped cleanly to Tonel output are ignored, because
+GitHub suggestions must match the pull request diff precisely.
+
+## Run Tests
+
+Smoke tests can be run from the image without loading an external sample
+project:
+
+```st
+AutoRenerakuTest suite run.
+ARGitHubEnvironmentTest suite run.
+AutoRenrakuGitHubPullRequestClientTest suite run.
+AutoRenrakuUISettingsTest suite run.
+AutoRenrakuPullRequestReviewPresenterTest suite run.
+```
+
+Or load the test group:
+
+```st
+Metacello new
+  baseline: 'AutoReneraku';
+  repository: 'github://badetitou/AutoRenraku:main/src';
+  load: 'tests'
+```
+
+## Troubleshooting
+
+If comments appear as normal timeline comments instead of inline review
+comments, make sure the UI package is up to date. AutoRenraku must post to the
+pull request review comments endpoint, `/pulls/<number>/comments`.
+
+If GitHub renders a code block but does not offer an apply button, check that:
+
+- the comment is inline on the Files changed diff
+- the target line is part of the pull request diff
+- the suggestion body starts with a fenced code block whose info string is `suggestion`
+- the image code matches the pull request head closely enough
+
+If no suggestions are produced, inspect:
+
+```st
+result warnings.
+result ignoredMethods.
+result methodErrors.
+```
+
