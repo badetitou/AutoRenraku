@@ -11,6 +11,13 @@ Class {
 	#package : 'AutoReneraku-Tests'
 }
 
+{ #category : 'helpers' }
+AutoRenerakuTest >> assertSuggestionBodyUsesGitHubLineEndings: aString [
+
+	self assert: (aString findString: String lf startingAt: 1) > 0.
+	self assert: (aString findString: String cr startingAt: 1) = 0
+]
+
 { #category : 'fixtures' }
 AutoRenerakuTest >> completeRemovalFixtureSource [
 
@@ -132,6 +139,19 @@ AutoRenerakuTest >> setUp [
 	autoreneraku projectName: 'AutoReneraku'
 ]
 
+{ #category : 'helpers' }
+AutoRenerakuTest >> suggestionBodyWithLines: lines [
+
+	| lineEnding |
+	lineEnding := String lf.
+	^ String streamContents: [ :stream |
+			  stream << '```suggestion'.
+			  stream << lineEnding.
+			  stream << (lineEnding join: lines).
+			  stream << lineEnding.
+			  stream << '```' ]
+]
+
 { #category : 'running' }
 AutoRenerakuTest >> tearDown [
 
@@ -151,16 +171,16 @@ AutoRenerakuTest >> testAutoRenerakuMethodSkipsNotFormattedSuggestion [
 { #category : 'tests' }
 AutoRenerakuTest >> testBuildBodyOfBasedOn [
 
-	| method data |
+	| method data body |
 	method := self correctableMethod.
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
 	autoreneraku buildBodyOf: data basedOn: method.
-	self assert: (data at: #body) equals: '```suggestion
-	outside := 1 > 2
-		           ifTrue: [ 3 ]
-		           ifFalse: [ 4 ]
-```'
+	body := data at: #body.
+	self assert: body equals: (self suggestionBodyWithLines:
+			 #( '	outside := 1 > 2' '		           ifTrue: [ 3 ]'
+			    '		           ifFalse: [ 4 ]' )).
+	self assertSuggestionBodyUsesGitHubLineEndings: body
 ]
 
 { #category : 'tests' }
@@ -171,9 +191,10 @@ AutoRenerakuTest >> testBuildBodyOfBasedOnForProtocol [
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
 	autoreneraku buildBodyOf: data basedOn: method.
-	self assert: (data at: #body) equals: '```suggestion
-{ #category : ''tests'' }
-```'
+	self
+		assert: (data at: #body)
+		equals:
+		(self suggestionBodyWithLines: #( '{ #category : ''tests'' }' ))
 ]
 
 { #category : 'tests' }
@@ -185,9 +206,9 @@ AutoRenerakuTest >> testBuildBodyOfBasedOnForRemoval [
 	autoreneraku autoCorrectMethod: method.
 	autoreneraku buildBodyOf: data basedOn: method.
 	"At least it should be removed (and replace with nothing, why not?)"
-	self assert: (data at: #body) equals: '```suggestion
-
-```'
+	self
+		assert: (data at: #body)
+		equals: (self suggestionBodyWithLines: #(  ))
 ]
 
 { #category : 'tests' }
@@ -199,9 +220,9 @@ AutoRenerakuTest >> testBuildBodyOfBasedOnForRemovalMultiStatement [
 	autoreneraku autoCorrectMethod: method.
 	autoreneraku buildBodyOf: data basedOn: method.
 	"At least it should be removed (and replace with nothing, why not?)"
-	self assert: (data at: #body) equals: '```suggestion
-
-```'
+	self
+		assert: (data at: #body)
+		equals: (self suggestionBodyWithLines: #(  ))
 ]
 
 { #category : 'tests' }
@@ -331,7 +352,9 @@ AutoRenerakuTest >> testFillDataWithNewMethodData [
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
 	autoreneraku fillData: data withNewMethodData: method.
-	self assert: data size equals: 4
+	self assert: data size equals: 6.
+	self assert: (data at: #side) equals: 'RIGHT'.
+	self assert: (data at: #start_side) equals: 'RIGHT'
 ]
 
 { #category : 'tests' }
@@ -342,7 +365,9 @@ AutoRenerakuTest >> testFillDataWithNewMethodDataWhenOneLineUpdate [
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
 	autoreneraku fillData: data withNewMethodData: method.
-	self assert: data size equals: 3
+	self assert: data size equals: 4.
+	self assert: (data at: #side) equals: 'RIGHT'.
+	self deny: (data includesKey: #start_side)
 ]
 
 { #category : 'tests' }
@@ -353,7 +378,9 @@ AutoRenerakuTest >> testFillDataWithNewMethodDataWhenRemove [
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
 	autoreneraku fillData: data withNewMethodData: method.
-	self assert: data size equals: 3
+	self assert: data size equals: 4.
+	self assert: (data at: #side) equals: 'RIGHT'.
+	self deny: (data includesKey: #start_side)
 ]
 
 { #category : 'tests' }
@@ -533,15 +560,36 @@ AutoRenerakuTest >> testTonelSuggestionBuilderCompleteRemoval [
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
 	(autoreneraku suggestionBuilderFor: method) fillData: data.
-	self assert: (data at: #body) equals: '```suggestion
-
-```'.
+	self
+		assert: (data at: #body)
+		equals: (self suggestionBodyWithLines: #(  )).
 	self
 		assert: (data at: #path)
 		equals:
 		'src/AutoReneraku-Tests/AutoRenerakuTestSampleWithFlag.class.st'.
 	self assert: (data at: #line) equals: 16.
-	self deny: (data includesKey: #start_line)
+	self assert: (data at: #side) equals: 'RIGHT'.
+	self deny: (data includesKey: #start_line).
+	self deny: (data includesKey: #start_side)
+]
+
+{ #category : 'tests' }
+AutoRenerakuTest >> testTonelSuggestionBuilderCorrectableMethodKeepsRangeSide [
+
+	| method data body |
+	method := self correctableMethod.
+	data := Dictionary new.
+	autoreneraku autoCorrectMethod: method.
+	(autoreneraku suggestionBuilderFor: method) fillData: data.
+	body := data at: #body.
+	self assert: body equals: (self suggestionBodyWithLines:
+			 #( '	outside := 1 > 2' '		           ifTrue: [ 3 ]'
+			    '		           ifFalse: [ 4 ]' )).
+	self assertSuggestionBodyUsesGitHubLineEndings: body.
+	self assert: (data at: #start_line) equals: 16.
+	self assert: (data at: #line) equals: 18.
+	self assert: (data at: #side) equals: 'RIGHT'.
+	self assert: (data at: #start_side) equals: 'RIGHT'
 ]
 
 { #category : 'tests' }
@@ -552,15 +600,17 @@ AutoRenerakuTest >> testTonelSuggestionBuilderNotFirstMethodInTonel [
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
 	(autoreneraku suggestionBuilderFor: method) fillData: data.
-	self assert: (data at: #body) equals: '```suggestion
-
-```'.
+	self
+		assert: (data at: #body)
+		equals: (self suggestionBodyWithLines: #(  )).
 	self
 		assert: (data at: #path)
 		equals:
 		'src/AutoReneraku-Tests/AutoRenerakuTestSampleWithFlag.class.st'.
 	self assert: (data at: #line) equals: 30.
-	self deny: (data includesKey: #start_line)
+	self assert: (data at: #side) equals: 'RIGHT'.
+	self deny: (data includesKey: #start_line).
+	self deny: (data includesKey: #start_side)
 ]
 
 { #category : 'tests' }
@@ -571,13 +621,16 @@ AutoRenerakuTest >> testTonelSuggestionBuilderProtocolOnlyChange [
 	data := Dictionary new.
 	autoreneraku autoCorrectMethod: method.
 	(autoreneraku suggestionBuilderFor: method) fillData: data.
-	self assert: (data at: #body) equals: '```suggestion
-{ #category : ''tests'' }
-```'.
+	self
+		assert: (data at: #body)
+		equals:
+		(self suggestionBodyWithLines: #( '{ #category : ''tests'' }' )).
 	self
 		assert: (data at: #path)
 		equals:
 		'src/AutoReneraku-Tests/AutoRenerakuTestSampleSubClass.class.st'.
 	self assert: (data at: #line) equals: 12.
-	self deny: (data includesKey: #start_line)
+	self assert: (data at: #side) equals: 'RIGHT'.
+	self deny: (data includesKey: #start_line).
+	self deny: (data includesKey: #start_side)
 ]

@@ -23,23 +23,22 @@ ARTonelSuggestionBuilder class >> forOriginalMethod: aCompiledMethod [
 { #category : 'accessing' }
 ARTonelSuggestionBuilder >> body [
 
-	| changedLines start stop |
+	| changedLines start stop lineEnding |
 	start := self diffStartOffset.
 	stop := self diffStopOffset.
+	lineEnding := String lf.
 	changedLines := stop = 0
 		                ifTrue: [ #(  ) ]
 		                ifFalse: [
 		                self correctedTonelLines
 			                copyFrom: start
 			                to: start + stop - 1 ].
-	^ (String streamContents: [ :stream |
-			   stream << '```suggestion'.
-			   stream << String cr.
-			   stream << (String cr join: changedLines).
-			   stream << String cr.
-			   stream << '```' ])
-		  copyReplaceAll: OSPlatform current lineEnding
-		  with: String cr
+	^ String streamContents: [ :stream |
+			  stream << '```suggestion'.
+			  stream << lineEnding.
+			  stream << (lineEnding join: changedLines).
+			  stream << lineEnding.
+			  stream << '```' ]
 ]
 
 { #category : 'private' }
@@ -103,10 +102,13 @@ ARTonelSuggestionBuilder >> fillData: aDictionary [
 	aDictionary at: #path put: self path.
 	aDictionary at: #start_line put: self startLine.
 	aDictionary at: #line put: self line.
+	aDictionary at: #side put: 'RIGHT'.
+	aDictionary at: #start_side put: 'RIGHT'.
 
 	(aDictionary at: #start_line) >= (aDictionary at: #line) ifTrue: [
 			aDictionary at: #line put: (aDictionary at: #start_line).
-			aDictionary removeKey: #start_line ].
+			aDictionary removeKey: #start_line.
+			aDictionary removeKey: #start_side ].
 
 	^ aDictionary
 ]

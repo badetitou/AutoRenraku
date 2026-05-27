@@ -10,7 +10,8 @@ Class {
 		'erroredMethods',
 		'postedSuggestions',
 		'builtSuggestions',
-		'methodErrors'
+		'methodErrors',
+		'warnings'
 	],
 	#category : 'AutoReneraku',
 	#package : 'AutoReneraku'
@@ -40,6 +41,12 @@ ARReviewRunResult >> hasErrors [
 	^ erroredMethods notEmpty
 ]
 
+{ #category : 'testing' }
+ARReviewRunResult >> hasWarnings [
+
+	^ warnings notEmpty
+]
+
 { #category : 'accessing' }
 ARReviewRunResult >> ignoredMethods [
 
@@ -55,7 +62,8 @@ ARReviewRunResult >> initialize [
 	erroredMethods := OrderedCollection new.
 	postedSuggestions := OrderedCollection new.
 	builtSuggestions := OrderedCollection new.
-	methodErrors := OrderedCollection new
+	methodErrors := OrderedCollection new.
+	warnings := OrderedCollection new
 ]
 
 { #category : 'testing' }
@@ -100,4 +108,21 @@ ARReviewRunResult >> recordIgnoredMethod: aMethod [
 ARReviewRunResult >> recordPostedSuggestion: aSuggestion [
 
 	postedSuggestions add: aSuggestion
+]
+
+{ #category : 'recording' }
+ARReviewRunResult >> recordWarning: aString [
+
+	warnings add: aString.
+	(Stdio respondsTo: #stderr) ifTrue: [
+			Stdio stderr
+				<< aString;
+				cr ].
+	^ aString
+]
+
+{ #category : 'accessing' }
+ARReviewRunResult >> warnings [
+
+	^ warnings asArray
 ]
